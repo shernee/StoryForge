@@ -1,0 +1,318 @@
+import uuid
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+from app.models.database import get_db, Memory, Story, Page
+from app.workflow.graph import story_graph
+from app.workflow.nodes.generate_illustration_prompts import generate_illustration_prompts
+from app.workflow.nodes.generate_illustrations import generate_illustrations
+from app.workflow.state import StoryState, StoryPlan, PageOutline, PageText, IllustrationPrompt
+
+router = APIRouter(prefix="/stories", tags=["stories"])
+
+VALID_TONES = {"funny", "adventurous", "gentle", "moral"}
+
+
+class GenerateStoryRequest(BaseModel):
+    memory_text: str
+    tone: str
+
+
+class GenerateStoryResponse(BaseModel):
+    story_id: str
+    memory_id: str
+    title: str
+    status: str
+    page_count: int
+
+
+class PageResponse(BaseModel):
+    page_number: int
+    text: str
+    illustration_prompt: str | None
+    mood: str | None
+    arc_position: str | None
+
+
+class StoryResponse(BaseModel):
+    story_id: str
+    title: str
+    tone: str
+    style_guide: str | None
+    status: str
+    pages: list[PageResponse]
+
+
+class StorySummary(BaseModel):
+    story_id: str
+    memory_id: str
+    title: str
+    tone: str
+    status: str
+    page_count: int
+
+
+@router.post("/generate", response_model=GenerateStoryResponse)
+def generate_story(request: GenerateStoryRequest, db: Session = Depends(get_db)):
+    if request.tone not in VALID_TONES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"tone must be one of {sorted(VALID_TONES)}",
+        )
+
+    story_id = f"story_{uuid.uuid4().hex[:8]}"
+
+    initial_state: StoryState = {
+        "story_id": story_id,
+        "raw_memory_text": request.memory_text,
+        "tone": request.tone,
+        "memory_metadata": None,
+        "character_profiles": None,
+        "story_plan": None,
+        "pages": None,
+        "illustration_prompts": None,
+        "illustration_paths": None,
+        "error": None,
+    }
+
+    result = story_graph.invoke(initial_state)
+
+    metadata = result["memory_metadata"]
+    plan = result["story_plan"]
+    pages = result["pages"]
+    illustration_by_page = {
+        page_num: p
+        for p in result["illustration_prompts"]
+        for page_num in p.page_numbers
+    }
+    path_by_page = {
+        page_num: path
+        for illus, path in zip(result["illustration_prompts"], result["illustration_paths"] or [])
+        for page_num in illus.page_numbers
+    }
+
+    memory_id = f"mem_{uuid.uuid4().hex[:8]}"
+    db.add(Memory(
+        id=memory_id,
+        raw_text=request.memory_text,
+        setting=metadata.setting,
+        characters=metadata.characters,
+        themes=metadata.themes,
+        mood_arc=metadata.mood_arc,
+    ))
+
+    db.add(Story(
+        id=story_id,
+        title=plan.title,
+        memory_id=memory_id,
+        tone=request.tone,
+        style_guide=plan.style_guide,
+        status="complete",
+    ))
+
+    outline_by_page = {o.page_number: o.outline for o in plan.pages}
+    for page in pages:
+        db.add(Page(
+            story_id=story_id,
+            page_number=page.page_number,
+            outline=outline_by_page.get(page.page_number),
+            text=page.text,
+            illustration_prompt=illustration_by_page[page.page_number].prompt if page.page_number in illustration_by_page else None,
+            illustration_arc_group=illustration_by_page[page.page_number].arc_group if page.page_number in illustration_by_page else None,
+            illustration_path=path_by_page.get(page.page_number),
+            mood=page.mood,
+            arc_position=page.arc_position,
+        ))
+
+    db.commit()
+
+    return GenerateStoryResponse(
+        story_id=story_id,
+        memory_id=memory_id,
+        title=plan.title,
+        status="complete",
+        page_count=len(pages),
+    )
+
+
+@router.get("", response_model=list[StorySummary])
+def list_stories(db: Session = Depends(get_db)):
+    stories = db.query(Story).order_by(Story.created_at.desc()).all()
+    return [
+        StorySummary(
+            story_id=s.id,
+            memory_id=s.memory_id,
+            title=s.title,
+            tone=s.tone,
+            status=s.status,
+            page_count=len(s.pages),
+        )
+        for s in stories
+    ]
+
+
+@router.post("/{story_id}/generate-illustration-prompts", response_model=StoryResponse)
+def regenerate_illustrations(story_id: str, db: Session = Depends(get_db)):
+    story = db.query(Story).filter(Story.id == story_id).first()
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+
+    sorted_pages = sorted(story.pages, key=lambda p: p.page_number)
+
+    state: StoryState = {
+        "raw_memory_text": story.memory.raw_text,
+        "tone": story.tone,
+        "memory_metadata": None,
+        "character_profiles": None,
+        "story_plan": StoryPlan(
+            title=story.title,
+            page_count=len(sorted_pages),
+            style_guide=story.style_guide or "",
+            pages=[
+                PageOutline(
+                    page_number=p.page_number,
+                    outline=p.outline or "",
+                    mood=p.mood or "",
+                    arc_position=p.arc_position or "",
+                )
+                for p in sorted_pages
+            ],
+        ),
+        "pages": [
+            PageText(
+                page_number=p.page_number,
+                text=p.text,
+                mood=p.mood or "",
+                arc_position=p.arc_position or "",
+            )
+            for p in sorted_pages
+        ],
+        "illustration_prompts": None,
+        "error": None,
+    }
+
+    result = generate_illustration_prompts(state)
+    illustration_by_page = {
+        page_num: p
+        for p in result["illustration_prompts"]
+        for page_num in p.page_numbers
+    }
+
+    for page in story.pages:
+        if page.page_number in illustration_by_page:
+            page.illustration_prompt = illustration_by_page[page.page_number].prompt
+            page.illustration_arc_group = illustration_by_page[page.page_number].arc_group
+    db.commit()
+
+    db.refresh(story)
+    return StoryResponse(
+        story_id=story.id,
+        title=story.title,
+        tone=story.tone,
+        style_guide=story.style_guide,
+        status=story.status,
+        pages=[
+            PageResponse(
+                page_number=p.page_number,
+                text=p.text,
+                illustration_prompt=p.illustration_prompt,
+                mood=p.mood,
+                arc_position=p.arc_position,
+            )
+            for p in sorted(story.pages, key=lambda p: p.page_number)
+        ],
+    )
+
+
+@router.post("/{story_id}/generate-illustrations", response_model=StoryResponse)
+def generate_illustrations_endpoint(story_id: str, db: Session = Depends(get_db)):
+    story = db.query(Story).filter(Story.id == story_id).first()
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+
+    sorted_pages = sorted(story.pages, key=lambda p: p.page_number)
+
+    # Reconstruct grouped IllustrationPrompt objects from per-page DB records
+    groups: dict[str, IllustrationPrompt] = {}
+    for p in sorted_pages:
+        if not p.illustration_prompt or not p.illustration_arc_group:
+            continue
+        if p.illustration_arc_group not in groups:
+            groups[p.illustration_arc_group] = IllustrationPrompt(
+                page_numbers=[p.page_number],
+                arc_group=p.illustration_arc_group,
+                prompt=p.illustration_prompt,
+            )
+        else:
+            groups[p.illustration_arc_group].page_numbers.append(p.page_number)
+
+    if not groups:
+        raise HTTPException(status_code=422, detail="No illustration prompts found — run regenerate-illustrations first")
+
+    state: StoryState = {
+        "story_id": story_id,
+        "raw_memory_text": "",
+        "tone": story.tone,
+        "memory_metadata": None,
+        "character_profiles": None,
+        "story_plan": None,
+        "pages": None,
+        "illustration_prompts": list(groups.values()),
+        "illustration_paths": None,
+        "error": None,
+    }
+
+    result = generate_illustrations(state)
+    path_by_page = {
+        page_num: path
+        for illus, path in zip(state["illustration_prompts"], result["illustration_paths"] or [])
+        for page_num in illus.page_numbers
+    }
+
+    for page in story.pages:
+        if page.page_number in path_by_page:
+            page.illustration_path = path_by_page[page.page_number]
+    db.commit()
+
+    db.refresh(story)
+    return StoryResponse(
+        story_id=story.id,
+        title=story.title,
+        tone=story.tone,
+        style_guide=story.style_guide,
+        status=story.status,
+        pages=[
+            PageResponse(
+                page_number=p.page_number,
+                text=p.text,
+                illustration_prompt=p.illustration_prompt,
+                mood=p.mood,
+                arc_position=p.arc_position,
+            )
+            for p in sorted_pages
+        ],
+    )
+
+
+@router.get("/{story_id}", response_model=StoryResponse)
+def get_story(story_id: str, db: Session = Depends(get_db)):
+    story = db.query(Story).filter(Story.id == story_id).first()
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    return StoryResponse(
+        story_id=story.id,
+        title=story.title,
+        tone=story.tone,
+        style_guide=story.style_guide,
+        status=story.status,
+        pages=[
+            PageResponse(
+                page_number=p.page_number,
+                text=p.text,
+                illustration_prompt=p.illustration_prompt,
+                mood=p.mood,
+                arc_position=p.arc_position,
+            )
+            for p in sorted(story.pages, key=lambda p: p.page_number)
+        ],
+    )
