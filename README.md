@@ -52,4 +52,4 @@ Valid tones: `funny`, `adventurous`, `gentle`, `moral`
 | Variable | Description |
 |----------|-------------|
 | `OPENROUTER_API_KEY` | Required. Used for both text and image generation. |
-| `IMAGE_MODEL` | Image model override. Default: `google/gemini-2.0-flash-exp` |
+| `IMAGE_MODEL` | Image model override. Default: `google/gemini-2.5-flash-image` |

@@ -1,4 +1,5 @@
 import base64
+import json
 import logging
 import os
 from pathlib import Path
@@ -6,7 +7,7 @@ from pathlib import Path
 from app.workflow.llm import get_client
 from app.workflow.state import StoryState
 
-IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "google/gemini-2.0-flash-exp")
+IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "google/gemini-2.5-flash-image")
 OUTPUT_DIR = Path("output")
 
 logger = logging.getLogger(__name__)
@@ -17,24 +18,25 @@ def _fetch_image_bytes(prompt: str) -> bytes:
     raw = client.chat.completions.with_raw_response.create(
         model=IMAGE_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        extra_body={
-            "modalities": ["image"],
-            "generation_config": {
-                "response_modalities": ["IMAGE"],
-                "image_generation_config": {
-                    "aspect_ratio": "3:2",
-                },
-            },
-        },
+        extra_body={"modalities": ["text", "image"]},
     )
-    return _extract_image_bytes(raw.json()["choices"][0]["message"]["content"])
+    data = json.loads(raw.text)
+    message = data["choices"][0]["message"]
+    content = message.get("content")
+    return _extract_image_bytes(content, message)
 
 
-def _extract_image_bytes(content) -> bytes:
-    parts = [content] if isinstance(content, str) else content
-    if not isinstance(parts, list):
-        raise ValueError(f"Unexpected content type: {type(content)}")
+def _extract_image_bytes(content, message: dict) -> bytes:
+    # OpenRouter returns image data in message["images"], not message["content"]
+    for part in message.get("images") or []:
+        if part.get("type") == "image_url":
+            url = part["image_url"]["url"]
+            if url.startswith("data:"):
+                _, b64 = url.split(",", 1)
+                return base64.b64decode(b64)
 
+    # Fallback: content as data URL string or list of parts
+    parts = [content] if isinstance(content, str) else content or []
     for part in parts:
         if isinstance(part, str) and part.startswith("data:"):
             _, b64 = part.split(",", 1)
@@ -45,11 +47,8 @@ def _extract_image_bytes(content) -> bytes:
                 if url.startswith("data:"):
                     _, b64 = url.split(",", 1)
                     return base64.b64decode(b64)
-            inline = part.get("inline_data") or part.get("inlineData")
-            if inline:
-                return base64.b64decode(inline["data"])
 
-    raise ValueError(f"No image data found in response: {str(content)[:300]}")
+    raise ValueError(f"No image data found. Full message: {json.dumps(message)[:2000]}")
 
 
 def generate_illustrations(state: StoryState) -> dict:
