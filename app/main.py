@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from app.models.database import create_tables, get_db
 from app.api.stories import router as stories_router
@@ -14,7 +15,11 @@ app.include_router(memories_router)
 @app.on_event("startup")
 async def startup_event():
     os.makedirs("data", exist_ok=True)
+    os.makedirs("output", exist_ok=True)
     create_tables()
+
+app.mount("/output", StaticFiles(directory="output"), name="output")
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 @app.get("/health")
 async def health_check():

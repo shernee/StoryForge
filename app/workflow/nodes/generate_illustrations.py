@@ -51,7 +51,7 @@ def _extract_image_bytes(content, message: dict) -> bytes:
     raise ValueError(f"No image data found. Full message: {json.dumps(message)[:2000]}")
 
 
-def generate_illustrations(state: StoryState) -> dict:
+def create_illustrations(state: StoryState) -> dict:
     story_id = state["story_id"]
     prompts = state["illustration_prompts"] or []
 

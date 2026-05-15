@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.models.database import get_db, Memory, Story, Page
 from app.workflow.graph import story_graph
 from app.workflow.nodes.generate_illustration_prompts import generate_illustration_prompts
-from app.workflow.nodes.generate_illustrations import generate_illustrations
+from app.workflow.nodes.generate_illustrations import create_illustrations
 from app.workflow.state import StoryState, StoryPlan, PageOutline, PageText, IllustrationPrompt
 
 router = APIRouter(prefix="/stories", tags=["stories"])
@@ -30,6 +30,7 @@ class PageResponse(BaseModel):
     page_number: int
     text: str
     illustration_prompt: str | None
+    illustration_path: str | None
     mood: str | None
     arc_position: str | None
 
@@ -152,7 +153,7 @@ def list_stories(db: Session = Depends(get_db)):
 
 
 @router.post("/{story_id}/generate-illustration-prompts", response_model=StoryResponse)
-def regenerate_illustrations(story_id: str, db: Session = Depends(get_db)):
+def generate_illustration_prompts(story_id: str, db: Session = Depends(get_db)):
     story = db.query(Story).filter(Story.id == story_id).first()
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
@@ -216,6 +217,7 @@ def regenerate_illustrations(story_id: str, db: Session = Depends(get_db)):
                 page_number=p.page_number,
                 text=p.text,
                 illustration_prompt=p.illustration_prompt,
+                illustration_path=p.illustration_path,
                 mood=p.mood,
                 arc_position=p.arc_position,
             )
@@ -225,7 +227,7 @@ def regenerate_illustrations(story_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{story_id}/generate-illustrations", response_model=StoryResponse)
-def generate_illustrations_endpoint(story_id: str, db: Session = Depends(get_db)):
+def generate_illustrations(story_id: str, db: Session = Depends(get_db)):
     story = db.query(Story).filter(Story.id == story_id).first()
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
@@ -262,7 +264,7 @@ def generate_illustrations_endpoint(story_id: str, db: Session = Depends(get_db)
         "error": None,
     }
 
-    result = generate_illustrations(state)
+    result = create_illustrations(state)
     path_by_page = {
         page_num: path
         for illus, path in zip(state["illustration_prompts"], result["illustration_paths"] or [])
@@ -286,6 +288,7 @@ def generate_illustrations_endpoint(story_id: str, db: Session = Depends(get_db)
                 page_number=p.page_number,
                 text=p.text,
                 illustration_prompt=p.illustration_prompt,
+                illustration_path=p.illustration_path,
                 mood=p.mood,
                 arc_position=p.arc_position,
             )
@@ -310,6 +313,7 @@ def get_story(story_id: str, db: Session = Depends(get_db)):
                 page_number=p.page_number,
                 text=p.text,
                 illustration_prompt=p.illustration_prompt,
+                illustration_path=p.illustration_path,
                 mood=p.mood,
                 arc_position=p.arc_position,
             )

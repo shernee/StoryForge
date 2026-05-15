@@ -5,7 +5,7 @@ from app.workflow.nodes.load_characters import load_characters
 from app.workflow.nodes.plan_story import plan_story
 from app.workflow.nodes.generate_text import generate_text
 from app.workflow.nodes.generate_illustration_prompts import generate_illustration_prompts
-from app.workflow.nodes.generate_illustrations import generate_illustrations
+from app.workflow.nodes.generate_illustrations import create_illustrations
 
 
 def build_graph():
@@ -16,7 +16,7 @@ def build_graph():
     workflow.add_node("plan_story", plan_story)
     workflow.add_node("generate_text", generate_text)
     workflow.add_node("generate_illustration_prompts", generate_illustration_prompts)
-    workflow.add_node("generate_illustrations", generate_illustrations)
+    workflow.add_node("generate_illustrations", create_illustrations)
 
     workflow.set_entry_point("extract_memory")
     workflow.add_edge("extract_memory", "load_characters")
