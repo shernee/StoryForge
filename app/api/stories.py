@@ -1,8 +1,8 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from app.models.database import get_db, Memory, Story, Page
+from app.models.database import get_db, SessionLocal, Memory, Story, Page
 from app.workflow.graph import story_graph
 from app.workflow.nodes.generate_illustration_prompts import generate_illustration_prompts
 from app.workflow.nodes.generate_illustrations import create_illustrations
@@ -14,7 +14,7 @@ VALID_TONES = {"funny", "adventurous", "gentle", "moral"}
 
 
 class GenerateStoryRequest(BaseModel):
-    memory_text: str
+    memory: str
     tone: str
 
 
@@ -24,6 +24,11 @@ class GenerateStoryResponse(BaseModel):
     title: str
     status: str
     page_count: int
+
+
+class StoryStatusResponse(BaseModel):
+    story_id: str
+    status: str
 
 
 class PageResponse(BaseModel):
@@ -53,8 +58,76 @@ class StorySummary(BaseModel):
     page_count: int
 
 
+def _run_story_generation(story_id: str, memory_id: str, raw_memory_text: str, tone: str):
+    db = SessionLocal()
+    try:
+        initial_state: StoryState = {
+            "story_id": story_id,
+            "raw_memory_text": raw_memory_text,
+            "tone": tone,
+            "memory_metadata": None,
+            "character_profiles": None,
+            "story_plan": None,
+            "pages": None,
+            "illustration_prompts": None,
+            "illustration_paths": None,
+            "error": None,
+        }
+
+        result = story_graph.invoke(initial_state)
+
+        metadata = result["memory_metadata"]
+        plan = result["story_plan"]
+        pages = result["pages"]
+        illustration_by_page = {
+            page_num: p
+            for p in result["illustration_prompts"]
+            for page_num in p.page_numbers
+        }
+        path_by_page = {
+            page_num: path
+            for illus, path in zip(result["illustration_prompts"], result["illustration_paths"] or [])
+            for page_num in illus.page_numbers
+        }
+
+        memory = db.query(Memory).filter(Memory.id == memory_id).first()
+        memory.setting = metadata.setting
+        memory.characters = metadata.characters
+        memory.themes = metadata.themes
+        memory.mood_arc = metadata.mood_arc
+
+        story = db.query(Story).filter(Story.id == story_id).first()
+        story.title = plan.title
+        story.style_guide = plan.style_guide
+        story.status = "complete"
+
+        outline_by_page = {o.page_number: o.outline for o in plan.pages}
+        for page in pages:
+            db.add(Page(
+                story_id=story_id,
+                page_number=page.page_number,
+                outline=outline_by_page.get(page.page_number),
+                text=page.text,
+                illustration_prompt=illustration_by_page[page.page_number].prompt if page.page_number in illustration_by_page else None,
+                illustration_arc_group=illustration_by_page[page.page_number].arc_group if page.page_number in illustration_by_page else None,
+                illustration_path=path_by_page.get(page.page_number),
+                mood=page.mood,
+                arc_position=page.arc_position,
+            ))
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        story = db.query(Story).filter(Story.id == story_id).first()
+        if story:
+            story.status = "error"
+            db.commit()
+    finally:
+        db.close()
+
+
 @router.post("/generate", response_model=GenerateStoryResponse)
-def generate_story(request: GenerateStoryRequest, db: Session = Depends(get_db)):
+def generate_story(request: GenerateStoryRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     if request.tone not in VALID_TONES:
         raise HTTPException(
             status_code=422,
@@ -62,78 +135,29 @@ def generate_story(request: GenerateStoryRequest, db: Session = Depends(get_db))
         )
 
     story_id = f"story_{uuid.uuid4().hex[:8]}"
-
-    initial_state: StoryState = {
-        "story_id": story_id,
-        "raw_memory_text": request.memory_text,
-        "tone": request.tone,
-        "memory_metadata": None,
-        "character_profiles": None,
-        "story_plan": None,
-        "pages": None,
-        "illustration_prompts": None,
-        "illustration_paths": None,
-        "error": None,
-    }
-
-    result = story_graph.invoke(initial_state)
-
-    metadata = result["memory_metadata"]
-    plan = result["story_plan"]
-    pages = result["pages"]
-    illustration_by_page = {
-        page_num: p
-        for p in result["illustration_prompts"]
-        for page_num in p.page_numbers
-    }
-    path_by_page = {
-        page_num: path
-        for illus, path in zip(result["illustration_prompts"], result["illustration_paths"] or [])
-        for page_num in illus.page_numbers
-    }
-
     memory_id = f"mem_{uuid.uuid4().hex[:8]}"
-    db.add(Memory(
-        id=memory_id,
-        raw_text=request.memory_text,
-        setting=metadata.setting,
-        characters=metadata.characters,
-        themes=metadata.themes,
-        mood_arc=metadata.mood_arc,
-    ))
 
-    db.add(Story(
-        id=story_id,
-        title=plan.title,
-        memory_id=memory_id,
-        tone=request.tone,
-        style_guide=plan.style_guide,
-        status="complete",
-    ))
-
-    outline_by_page = {o.page_number: o.outline for o in plan.pages}
-    for page in pages:
-        db.add(Page(
-            story_id=story_id,
-            page_number=page.page_number,
-            outline=outline_by_page.get(page.page_number),
-            text=page.text,
-            illustration_prompt=illustration_by_page[page.page_number].prompt if page.page_number in illustration_by_page else None,
-            illustration_arc_group=illustration_by_page[page.page_number].arc_group if page.page_number in illustration_by_page else None,
-            illustration_path=path_by_page.get(page.page_number),
-            mood=page.mood,
-            arc_position=page.arc_position,
-        ))
-
+    db.add(Memory(id=memory_id, raw_text=request.memory))
+    db.add(Story(id=story_id, title="Generating...", memory_id=memory_id, tone=request.tone, status="generating"))
     db.commit()
+
+    background_tasks.add_task(_run_story_generation, story_id, memory_id, request.memory, request.tone)
 
     return GenerateStoryResponse(
         story_id=story_id,
         memory_id=memory_id,
-        title=plan.title,
-        status="complete",
-        page_count=len(pages),
+        title="Generating...",
+        status="generating",
+        page_count=0,
     )
+
+
+@router.get("/{story_id}/status", response_model=StoryStatusResponse)
+def get_story_status(story_id: str, db: Session = Depends(get_db)):
+    story = db.query(Story).filter(Story.id == story_id).first()
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    return StoryStatusResponse(story_id=story_id, status=story.status)
 
 
 @router.get("", response_model=list[StorySummary])
@@ -234,7 +258,6 @@ def generate_illustrations(story_id: str, db: Session = Depends(get_db)):
 
     sorted_pages = sorted(story.pages, key=lambda p: p.page_number)
 
-    # Reconstruct grouped IllustrationPrompt objects from per-page DB records
     groups: dict[str, IllustrationPrompt] = {}
     for p in sorted_pages:
         if not p.illustration_prompt or not p.illustration_arc_group:

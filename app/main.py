@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from app.models.database import create_tables, get_db
@@ -20,6 +21,14 @@ async def startup_event():
 
 app.mount("/output", StaticFiles(directory="output"), name="output")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+@app.get("/read")
+async def reader_page():
+    return FileResponse("app/static/reader.html")
+
+@app.get("/new")
+async def create_page():
+    return FileResponse("app/static/create.html")
 
 @app.get("/health")
 async def health_check():

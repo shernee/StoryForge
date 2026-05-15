@@ -51,6 +51,7 @@
       height: 100%;
       object-fit: cover;
       display: block;
+      transition: opacity 0.3s ease;
     }
 
     #right-panel {
@@ -73,6 +74,7 @@
     #page-text {
       font-size: 1.15rem;
       line-height: 1.7;
+      transition: opacity 0.18s ease;
     }
 
     #nav {
@@ -108,6 +110,17 @@
       text-align: center;
     }
 
+    #back {
+      font-size: 0.8rem;
+      color: #bbb;
+      text-decoration: none;
+      padding: 8px 16px;
+      align-self: flex-start;
+      transition: color 0.15s;
+    }
+
+    #back:hover { color: #888; }
+
     #error {
       padding: 48px 24px;
       color: #c00;
@@ -118,6 +131,7 @@
 </head>
 <body>
 
+<a id="back" href="/new">← Stories</a>
 <div id="title"></div>
 
 <div id="reader">
@@ -153,6 +167,7 @@
   let pages = [];
   let current = 0;
   let currentImagePath = null;
+  let firstRender = true;
 
   function showError(msg) {
     document.getElementById('reader').style.display = 'none';
@@ -162,14 +177,27 @@
 
   function render() {
     const page = pages[current];
+    const isFirst = firstRender;
+    firstRender = false;
+
+    if (isFirst) {
+      textEl.textContent = page.text;
+    } else {
+      textEl.style.opacity = '0';
+      setTimeout(() => {
+        textEl.textContent = page.text;
+        textEl.style.opacity = '1';
+      }, 180);
+    }
 
     const newPath = page.illustration_path ? '/' + page.illustration_path : null;
     if (newPath && newPath !== currentImagePath) {
+      if (!isFirst) imgEl.style.opacity = '0';
       imgEl.src = newPath;
       currentImagePath = newPath;
+      imgEl.onload = () => { imgEl.style.opacity = '1'; };
     }
 
-    textEl.textContent = page.text;
     indicatorEl.textContent = `${current + 1} / ${pages.length}`;
     prevBtn.disabled = current === 0;
     nextBtn.disabled = current === pages.length - 1;
