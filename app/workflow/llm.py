@@ -29,9 +29,10 @@ def call_structured(
     response_model: Type[T],
     model: str = DEFAULT_MODEL,
     max_retries: int = 2,
+    temperature: float | None = None,
 ) -> T:
     client = get_client()
-    schema_hint = json.dumps(response_model.model_json_schema(), indent=2)
+    schema_hint = json.dumps(response_model.model_json_schema(by_alias=True), indent=2)
     full_system = f"{system}\n\nRespond with a JSON object matching this schema:\n{schema_hint}"
 
     messages: list[dict] = [
@@ -41,12 +42,15 @@ def call_structured(
 
     last_error: Exception | None = None
 
+    base_kwargs: dict = {
+        "model": model,
+        "response_format": {"type": "json_object"},
+    }
+    if temperature is not None:
+        base_kwargs["temperature"] = temperature
+
     for attempt in range(1, max_retries + 1):
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            response_format={"type": "json_object"},
-        )
+        response = client.chat.completions.create(**base_kwargs, messages=messages)
 
         content = response.choices[0].message.content
         if not content:

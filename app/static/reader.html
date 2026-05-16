@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>StoryForge</title>
+  <title>TaleSnap</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -223,7 +223,7 @@
     }
     const story = await res.json();
     titleEl.textContent = story.title;
-    document.title = story.title + ' — StoryForge';
+    document.title = story.title + ' — TaleSnap';
     pages = story.pages.sort((a, b) => a.page_number - b.page_number);
     render();
   }

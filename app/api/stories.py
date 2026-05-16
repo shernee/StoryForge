@@ -1,9 +1,11 @@
 import uuid
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.models.database import get_db, SessionLocal, Memory, Story, Page
 from app.workflow.graph import story_graph
+from app.workflow.nodes.evaluate_text import evaluate_text
 from app.workflow.nodes.generate_illustration_prompts import generate_illustration_prompts
 from app.workflow.nodes.generate_illustrations import create_illustrations
 from app.workflow.state import StoryState, StoryPlan, PageOutline, PageText, IllustrationPrompt
@@ -72,6 +74,9 @@ def _run_story_generation(story_id: str, memory_id: str, raw_memory_text: str, t
             "illustration_prompts": None,
             "illustration_paths": None,
             "error": None,
+            "evaluation_results": [],
+            "retry_count": 0,
+            "text_feedback": None,
         }
 
         result = story_graph.invoke(initial_state)
@@ -177,7 +182,7 @@ def list_stories(db: Session = Depends(get_db)):
 
 
 @router.post("/{story_id}/generate-illustration-prompts", response_model=StoryResponse)
-def generate_illustration_prompts(story_id: str, db: Session = Depends(get_db)):
+def generate_illustration_prompts_endpoint(story_id: str, db: Session = Depends(get_db)):
     story = db.query(Story).filter(Story.id == story_id).first()
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
@@ -318,6 +323,32 @@ def generate_illustrations(story_id: str, db: Session = Depends(get_db)):
             for p in sorted_pages
         ],
     )
+
+
+@router.post("/{story_id}/evaluate-text")
+def evaluate_story_text(story_id: str, db: Session = Depends(get_db)):
+    story = db.query(Story).filter(Story.id == story_id).first()
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    if not story.pages:
+        raise HTTPException(status_code=422, detail="Story has no pages to evaluate")
+
+    sorted_pages = sorted(story.pages, key=lambda p: p.page_number)
+    state: StoryState = {
+        "pages": [
+            PageText(
+                page_number=p.page_number,
+                text=p.text,
+                mood=p.mood or "",
+                arc_position=p.arc_position or "",
+            )
+            for p in sorted_pages
+        ],
+    }
+
+    result = evaluate_text(state)
+    eval_result = result["evaluation_results"][0]
+    return JSONResponse(content=eval_result.model_dump(by_alias=True))
 
 
 @router.get("/{story_id}", response_model=StoryResponse)

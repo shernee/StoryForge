@@ -1,0 +1,124 @@
+# StoryForge — Text Register Evaluator Rubric
+
+The evaluator checks generated story text against the target register: picture book narration for 2–3 year olds. It runs after `generate_text` and before `generate_illustration_prompts` in the LangGraph workflow.
+
+## Target Register
+
+Real children's picture books. Short declarative sentences. Characters do things. Narrate what happens — don't talk to the reader. Emotion through action, not description. One sound word per page max. Structural repetition (an echoing phrase across pages) is a feature, not a bug.
+
+## Failure Types
+
+### Hard Failures
+
+A **single occurrence** of any hard failure on a page triggers re-prompting for that page.
+
+#### 1. Reader Address
+The text speaks directly to the reader or listener.
+- **Fail:** "Look!", "Can you see the frog?", "What do you think happened next?", "Let's find out!"
+- **Pass:** "Vihaan saw the frog." "The frog jumped into the pond."
+- **Why hard:** This is a different register entirely — "parent pointing at pictures" mode, not narration. It's the most common register mistake.
+
+#### 2. Baby Talk
+Exaggerated childish language that real picture books don't use.
+- **Fail:** "widdle", "tum-tum", "icky", "yummy in his tummy", "sleepy-weepy"
+- **Pass:** "little", "tummy", "yummy" (these are normal toddler vocabulary, not baby talk)
+- **Why hard:** Condescending register. Real picture book authors (Eric Carle, Julia Donaldson) never write this way.
+
+#### 3. Abstract Emotion or Metaphor
+Feelings described as internal states or figurative language rather than visible action. The test: could a 2-year-old observe it happening?
+- **Fail:** "A wave of courage washed over him", "his heart swelled with pride", "she felt a deep sense of wonder", "joy filled the room"
+- **Pass:** "The sun felt warm on his face." "The sand was soft under his feet." (concrete sensory descriptions are fine)
+- **Pass:** "He smiled." (observable)
+- **Why hard:** This is the single most common way LLMs drift from picture book register. They reach for literary flourish when the text should be concrete and visible.
+
+#### 4. Sound Word Overuse
+More than one onomatopoeia on a single page.
+- **Fail:** "Splash! Whoosh! Flap!" or "The wave went splash and the wind went whoosh"
+- **Pass:** "Splash! The water went everywhere." (one sound word, used well)
+- **Why hard:** Multiple sound words on one page reads like a comic book, not a picture book. One per page creates rhythm; more creates noise.
+
+#### 5. Sentence Length
+Any sentence exceeding approximately 15 words.
+- **Fail:** "Vihaan and Mamma and Dada walked together along the warm sandy beach looking at all the colourful shells." (19 words)
+- **Pass:** "Vihaan walked along the beach with Mamma and Dada." (9 words)
+- **Why hard:** Picture book sentences are short. If a sentence needs 15+ words, it should be split into two.
+
+---
+
+### Soft Failures
+
+Soft failures use **two triggers**:
+- **2+ different soft failures on a single page** → that page is re-prompted
+- **The same soft failure on 3+ pages across the book** → all affected pages are re-prompted
+
+#### 1. Narrator Commentary
+The narrator editorialises or reacts instead of narrating events.
+- **Fail:** "What a wonderful day!", "Hooray!", "And that was the best adventure ever!", "Oh no!"
+- **Pass:** "It was a good day." (simple statement, not exclamatory commentary)
+- **Borderline (acceptable if rare):** "And that was that." at the end of the book
+- **Why soft:** Occasional commentary is fine and even natural in picture books. The problem is when it replaces narration — every page ending with "What fun!" is a pattern failure.
+
+#### 2. Passive Voice
+Action described passively when active voice would be more direct.
+- **Fail:** "The ball was thrown by Vihaan." "The bag was grabbed by the seagull."
+- **Pass:** "Vihaan threw the ball." "The seagull grabbed the bag."
+- **Why soft:** One passive sentence isn't terrible. A pattern of passive voice across the book makes the writing feel flat and distant.
+
+#### 3. Emotion Told Not Shown
+Stating a feeling directly rather than showing it through action, dialogue, or body language. Distinct from "abstract emotion" — this is simpler, using basic feeling words rather than literary metaphor.
+- **Fail:** "He felt scared." "She was happy." "Vihaan was excited."
+- **Pass:** "He hid behind Mamma's legs." "She clapped her hands." "Vihaan jumped up and down."
+- **Why soft:** "He felt scared" isn't as bad as "a chill of fear ran down his spine" (which is a hard failure). It's lazy but not register-breaking. The pattern across many pages is the problem.
+
+#### 4. No Action Verb
+A page where no character physically does something. Every page should have at least one concrete action.
+- **Fail:** A page that is entirely description: "The beach was sunny. The water was blue. The sand was warm."
+- **Pass:** "Vihaan dug in the sand." (character does something)
+- **Why soft:** A single descriptive page (e.g. a scene-setting opening) can work. Multiple pages without action means the story has stalled.
+
+#### 5. Non-Structural Repetition
+Words or phrases repeated without narrative purpose, as opposed to intentional structural echoing across pages.
+- **Fail:** "Vihaan was happy. He was so happy. It was a happy day." (accidental repetition)
+- **Pass:** "Stomp, stomp, stomp" appearing on three pages as a deliberate refrain echoing through the book
+- **Why soft:** Hard to distinguish from intentional repetition without full-book context. The evaluator should flag it; the re-prompt should clarify whether it's intentional.
+
+---
+
+## Evaluator Output Format
+
+```json
+{
+  "book_pass": true,
+  "pages": [
+    {
+      "page_number": 1,
+      "pass": true,
+      "hard_failures": [],
+      "soft_failures": []
+    },
+    {
+      "page_number": 3,
+      "pass": false,
+      "hard_failures": ["abstract_emotion"],
+      "soft_failures": ["passive_voice"],
+      "failing_text": ["Joy filled the air as the seagull flew away."],
+      "feedback": "Replace 'Joy filled the air' with a concrete visible action — what did the characters physically do when the seagull left? Also rewrite 'was chased by Vihaan' in active voice."
+    }
+  ],
+  "pattern_failures": [
+    {
+      "type": "narrator_commentary",
+      "affected_pages": [1, 3, 5, 7],
+      "note": "Narrator commentary appears on 4 of 7 pages — this is a pattern, not occasional use."
+    }
+  ]
+}
+```
+
+## Re-prompt Behaviour
+
+- Only failing pages are sent back for regeneration.
+- The re-prompt includes the specific feedback for each failing page.
+- Passing pages are preserved unchanged and sent alongside regenerated pages so the model maintains structural repetition and narrative coherence.
+- Maximum 2 retry cycles. After 2 retries, accept the best version and proceed.
+- The retry counter is tracked in LangGraph state.

@@ -1,6 +1,7 @@
 from __future__ import annotations
-from typing import TypedDict, Optional
-from pydantic import BaseModel
+import operator
+from typing import Annotated, TypedDict, Optional
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MemoryMetadata(BaseModel):
@@ -53,6 +54,29 @@ class GeneratedIllustrationPrompts(BaseModel):
     prompts: list[IllustrationPrompt]
 
 
+class PageEvaluation(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    page_number: int
+    page_pass: bool = Field(alias="pass")
+    hard_failures: list[str] = Field(default_factory=list)
+    soft_failures: list[str] = Field(default_factory=list)
+    failing_text: list[str] = Field(default_factory=list)
+    feedback: Optional[str] = None
+
+
+class PatternFailure(BaseModel):
+    type: str
+    affected_pages: list[int]
+    note: str
+
+
+class EvaluationResult(BaseModel):
+    book_pass: bool
+    pages: list[PageEvaluation]
+    pattern_failures: list[PatternFailure] = Field(default_factory=list)
+
+
 class StoryState(TypedDict):
     story_id: str
     raw_memory_text: str
@@ -64,3 +88,6 @@ class StoryState(TypedDict):
     illustration_prompts: Optional[list[IllustrationPrompt]]
     illustration_paths: Optional[list[str]]
     error: Optional[str]
+    evaluation_results: Annotated[list[EvaluationResult], operator.add]
+    retry_count: Optional[int]
+    text_feedback: Optional[dict[int, str]]
