@@ -7,6 +7,7 @@ from app.models.database import get_db, SessionLocal, Memory, Story, Page
 from app.workflow.graph import story_graph
 from app.workflow.nodes.evaluate_text import evaluate_text
 from app.workflow.nodes.generate_illustration_prompts import generate_illustration_prompts
+from app.workflow.nodes.validate_illustration_prompts import validate_illustration_prompts
 from app.workflow.nodes.generate_illustrations import create_illustrations
 from app.workflow.state import StoryState, StoryPlan, PageOutline, PageText, IllustrationPrompt
 
@@ -323,6 +324,52 @@ def generate_illustrations(story_id: str, db: Session = Depends(get_db)):
             for p in sorted_pages
         ],
     )
+
+
+@router.post("/{story_id}/validate-illustration-prompts")
+def validate_illustration_prompts_endpoint(story_id: str, db: Session = Depends(get_db)):
+    story = db.query(Story).filter(Story.id == story_id).first()
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+
+    sorted_pages = sorted(story.pages, key=lambda p: p.page_number)
+
+    groups: dict[str, IllustrationPrompt] = {}
+    for p in sorted_pages:
+        if not p.illustration_prompt or not p.illustration_arc_group:
+            continue
+        if p.illustration_arc_group not in groups:
+            groups[p.illustration_arc_group] = IllustrationPrompt(
+                page_numbers=[p.page_number],
+                arc_group=p.illustration_arc_group,
+                prompt=p.illustration_prompt,
+            )
+        else:
+            groups[p.illustration_arc_group].page_numbers.append(p.page_number)
+
+    if not groups:
+        raise HTTPException(status_code=422, detail="No illustration prompts found — run generate-illustration-prompts first")
+
+    state: StoryState = {
+        "story_plan": StoryPlan(
+            title=story.title,
+            page_count=len(sorted_pages),
+            style_guide=story.style_guide or "",
+            pages=[
+                PageOutline(
+                    page_number=p.page_number,
+                    outline=p.outline or "",
+                    mood=p.mood or "",
+                    arc_position=p.arc_position or "",
+                )
+                for p in sorted_pages
+            ],
+        ),
+        "illustration_prompts": list(groups.values()),
+    }
+
+    result = validate_illustration_prompts(state)
+    return JSONResponse(content=result["illustration_prompt_validation"].model_dump(by_alias=True))
 
 
 @router.post("/{story_id}/evaluate-text")

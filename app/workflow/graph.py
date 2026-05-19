@@ -7,6 +7,7 @@ from app.workflow.nodes.generate_text import generate_text
 from app.workflow.nodes.evaluate_text import evaluate_text
 from app.workflow.nodes.regenerate_text import regenerate_text
 from app.workflow.nodes.generate_illustration_prompts import generate_illustration_prompts
+from app.workflow.nodes.validate_illustration_prompts import validate_illustration_prompts
 from app.workflow.nodes.generate_illustrations import create_illustrations
 
 
@@ -33,6 +34,7 @@ def build_graph():
     workflow.add_node("evaluate_text", evaluate_text)
     workflow.add_node("regenerate_text", regenerate_text)
     workflow.add_node("generate_illustration_prompts", generate_illustration_prompts)
+    workflow.add_node("validate_illustration_prompts", validate_illustration_prompts)
     workflow.add_node("generate_illustrations", create_illustrations)
 
     workflow.set_entry_point("extract_memory")
@@ -49,7 +51,8 @@ def build_graph():
         },
     )
     workflow.add_edge("regenerate_text", "evaluate_text")
-    workflow.add_edge("generate_illustration_prompts", "generate_illustrations")
+    workflow.add_edge("generate_illustration_prompts", "validate_illustration_prompts")
+    workflow.add_edge("validate_illustration_prompts", "generate_illustrations")
     workflow.add_edge("generate_illustrations", END)
 
     return workflow.compile()

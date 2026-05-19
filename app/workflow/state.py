@@ -54,6 +54,23 @@ class GeneratedIllustrationPrompts(BaseModel):
     prompts: list[IllustrationPrompt]
 
 
+class PromptWarning(BaseModel):
+    rule: str
+    offending_text: str
+
+
+class PromptValidation(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    page_numbers: list[int]
+    prompt_pass: bool = Field(alias="pass")
+    warnings: list[PromptWarning] = Field(default_factory=list)
+
+
+class IllustrationPromptValidationResult(BaseModel):
+    prompts: list[PromptValidation]
+
+
 class PageEvaluation(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -86,6 +103,7 @@ class StoryState(TypedDict):
     story_plan: Optional[StoryPlan]
     pages: Optional[list[PageText]]
     illustration_prompts: Optional[list[IllustrationPrompt]]
+    illustration_prompt_validation: Optional[IllustrationPromptValidationResult]
     illustration_paths: Optional[list[str]]
     error: Optional[str]
     evaluation_results: Annotated[list[EvaluationResult], operator.add]

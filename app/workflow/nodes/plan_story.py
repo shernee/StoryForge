@@ -8,9 +8,11 @@ a page count of 5–7 pages; a per-page outline with the mood and arc position f
 (setup, rising action, climax, resolution, ending); and a visual style guide describing the \
 overall look and color palette for the book's scene illustrations. Focus on: the dominant \
 colors of the setting (warm sandy yellows, ocean blues, forest greens), the lighting \
-(bright midday sun, soft golden evening, grey rainy day), and the general atmosphere \
-(busy and colorful, quiet and calm, wild and messy). Do not describe characters, expressions, \
+(bright midday sun, soft golden evening, grey rainy day). Do not describe characters, expressions, \
 or actions — the style guide is for backgrounds and settings only. \
+Example line in the style guide: "Warm sandy yellows and ocean blues dominate. Bright midday \
+sun with soft shadows on the sand. Colorful plastic toys and a canvas tote bag \
+provide accent colors against the neutral sand." \
 The story must be grounded in the \
 specific events described in the memory. The key moments, conflict, and resolution from the \
 real experience should form the backbone of the story arc. Do not invent new scenes or replace \
