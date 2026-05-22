@@ -6,6 +6,12 @@ from app.workflow.nodes.helpers.page_grouping import group_pages_by_arc
 
 SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "generate_illustration_prompts_system.txt").read_text()
 
+STYLE_PREFIX = (
+    "Soft watercolor children's book illustration, simple shapes, warm color palette, "
+    "gentle and inviting, minimal detail, white background. "
+    "No text, no words, no letters, no captions."
+)
+
 
 def _build_user_prompt(state: StoryState) -> str:
     plan = state["story_plan"]
@@ -25,4 +31,6 @@ def generate_illustration_prompts(state: StoryState) -> dict:
         user=_build_user_prompt(state),
         response_model=GeneratedIllustrationPrompts,
     )
+    for p in result.prompts:
+        p.prompt = f"{STYLE_PREFIX} {p.prompt}"
     return {"illustration_prompts": result.prompts}

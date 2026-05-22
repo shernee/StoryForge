@@ -18,7 +18,7 @@ def _fetch_image_bytes(prompt: str) -> bytes:
     raw = client.chat.completions.with_raw_response.create(
         model=IMAGE_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        extra_body={"modalities": ["text", "image"]},
+        extra_body={"modalities": ["text", "image"], "image_config": {"aspect_ratio": "3:2"}},
     )
     data = json.loads(raw.text)
     message = data["choices"][0]["message"]
