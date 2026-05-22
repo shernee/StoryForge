@@ -7,7 +7,9 @@ Turns real family memories into personalized illustrated children's storybooks.
 Provide a memory and a tone — StoryForge runs a LangGraph pipeline that extracts characters, plans the story, writes the pages, generates illustration prompts, and produces images via Gemini Flash.
 
 ```
-extract_memory → load_characters → plan_story → generate_text → generate_illustration_prompts → generate_illustrations
+extract_memory → load_characters → plan_story → generate_text → evaluate_text → generate_illustration_prompts → validate_illustration_prompts → generate_illustrations
+                                                                      ↓ (fail, up to 2x)
+                                                                regenerate_text
 ```
 
 Images are saved to `output/{story_id}/`.
@@ -34,7 +36,10 @@ OPENROUTER_API_KEY=your_key uvicorn app.main:app --reload
 | POST | `/stories/generate` | Full pipeline — text + illustrations |
 | GET | `/stories` | List all stories |
 | GET | `/stories/{id}` | Get story with pages |
-| POST | `/stories/{id}/generate-illustration-prompts` | Regenerate prompts only |
+| GET | `/stories/{id}/status` | Get generation status |
+| POST | `/stories/{id}/evaluate-text` | Run text register evaluation |
+| POST | `/stories/{id}/generate-illustration-prompts` | Regenerate illustration prompts |
+| POST | `/stories/{id}/validate-illustration-prompts` | Validate illustration prompts against rubric |
 | POST | `/stories/{id}/generate-illustrations` | Generate images from existing prompts |
 
 ### Generate a story
