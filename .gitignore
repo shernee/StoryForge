@@ -12,6 +12,9 @@ data/
 # Generated images
 output/
 
+# Downloaded fonts (fetched by setup.sh / Dockerfile)
+app/fonts/
+
 # Claude Code local config
 .claude/
 

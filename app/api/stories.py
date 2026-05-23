@@ -1,9 +1,10 @@
 import uuid
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.models.database import get_db, SessionLocal, Memory, Story, Page
+from app.services.pdf_renderer import render_story_pdf
 from app.workflow.graph import story_graph
 from app.workflow.nodes.evaluate_text import evaluate_text
 from app.workflow.nodes.generate_illustration_prompts import generate_illustration_prompts
@@ -396,6 +397,35 @@ def evaluate_story_text(story_id: str, db: Session = Depends(get_db)):
     result = evaluate_text(state)
     eval_result = result["evaluation_results"][0]
     return JSONResponse(content=eval_result.model_dump(by_alias=True))
+
+
+@router.get("/{story_id}/pdf")
+def get_story_pdf(story_id: str, db: Session = Depends(get_db)):
+    story = db.query(Story).filter(Story.id == story_id).first()
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+
+    story_dict = {
+        "story_id": story.id,
+        "title": story.title,
+        "tone": story.tone,
+        "pages": [
+            {
+                "page_number": p.page_number,
+                "text": p.text,
+                "illustration_path": p.illustration_path,
+            }
+            for p in sorted(story.pages, key=lambda p: p.page_number)
+        ],
+    }
+
+    pdf_bytes = render_story_pdf(story_dict, output_dir="output")
+    filename = f"{story.title.replace(' ', '_')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{story_id}", response_model=StoryResponse)
