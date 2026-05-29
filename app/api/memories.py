@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from app.models.database import get_db, Memory
+from app.models.database import get_db, Memory, AccessCode
+from app.api.auth import require_code
 
 router = APIRouter(prefix="/memories", tags=["memories"])
 
@@ -16,8 +17,8 @@ class MemoryResponse(BaseModel):
 
 
 @router.get("/{memory_id}", response_model=MemoryResponse)
-def get_memory(memory_id: str, db: Session = Depends(get_db)):
-    memory = db.query(Memory).filter(Memory.id == memory_id).first()
+def get_memory(memory_id: str, db: Session = Depends(get_db), access_code: AccessCode = Depends(require_code)):
+    memory = db.query(Memory).filter(Memory.id == memory_id, Memory.code == access_code.code).first()
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
     return MemoryResponse(

@@ -96,6 +96,7 @@ class EvaluationResult(BaseModel):
 
 class StoryState(TypedDict):
     story_id: str
+    user_code: str
     raw_memory_text: str
     tone: str
     memory_metadata: Optional[MemoryMetadata]

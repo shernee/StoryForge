@@ -1,9 +1,11 @@
 import uuid
+from datetime import date
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from app.models.database import get_db, SessionLocal, Memory, Story, Page
+from app.models.database import get_db, SessionLocal, Memory, Story, Page, AccessCode
+from app.api.auth import DAILY_LIMIT, require_code
 from app.services.pdf_renderer import render_story_pdf
 from app.workflow.graph import story_graph
 from app.workflow.nodes.evaluate_text import evaluate_text
@@ -62,11 +64,12 @@ class StorySummary(BaseModel):
     page_count: int
 
 
-def _run_story_generation(story_id: str, memory_id: str, raw_memory_text: str, tone: str):
+def _run_story_generation(story_id: str, memory_id: str, raw_memory_text: str, tone: str, user_code: str):
     db = SessionLocal()
     try:
         initial_state: StoryState = {
             "story_id": story_id,
+            "user_code": user_code,
             "raw_memory_text": raw_memory_text,
             "tone": tone,
             "memory_metadata": None,
@@ -134,21 +137,40 @@ def _run_story_generation(story_id: str, memory_id: str, raw_memory_text: str, t
 
 
 @router.post("/generate", response_model=GenerateStoryResponse)
-def generate_story(request: GenerateStoryRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def generate_story(
+    request: GenerateStoryRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    access_code: AccessCode = Depends(require_code),
+):
     if request.tone not in VALID_TONES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"tone must be one of {sorted(VALID_TONES)}",
-        )
+        raise HTTPException(status_code=422, detail=f"tone must be one of {sorted(VALID_TONES)}")
+
+    if not access_code.is_admin:
+        today = date.today()
+        if access_code.last_generation_date != today:
+            access_code.generations_today = 0
+        if access_code.generations_today >= DAILY_LIMIT:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Daily limit of {DAILY_LIMIT} stories reached. Come back tomorrow!",
+            )
+
+    today = date.today()
+    if access_code.last_generation_date != today:
+        access_code.generations_today = 0
+    access_code.generations_today += 1
+    access_code.last_generation_date = today
+    db.commit()
 
     story_id = f"story_{uuid.uuid4().hex[:8]}"
     memory_id = f"mem_{uuid.uuid4().hex[:8]}"
 
-    db.add(Memory(id=memory_id, raw_text=request.memory))
-    db.add(Story(id=story_id, title="Generating...", memory_id=memory_id, tone=request.tone, status="generating"))
+    db.add(Memory(id=memory_id, code=access_code.code, raw_text=request.memory))
+    db.add(Story(id=story_id, code=access_code.code, title="Generating...", memory_id=memory_id, tone=request.tone, status="generating"))
     db.commit()
 
-    background_tasks.add_task(_run_story_generation, story_id, memory_id, request.memory, request.tone)
+    background_tasks.add_task(_run_story_generation, story_id, memory_id, request.memory, request.tone, access_code.code)
 
     return GenerateStoryResponse(
         story_id=story_id,
@@ -160,16 +182,16 @@ def generate_story(request: GenerateStoryRequest, background_tasks: BackgroundTa
 
 
 @router.get("/{story_id}/status", response_model=StoryStatusResponse)
-def get_story_status(story_id: str, db: Session = Depends(get_db)):
-    story = db.query(Story).filter(Story.id == story_id).first()
+def get_story_status(story_id: str, db: Session = Depends(get_db), access_code: AccessCode = Depends(require_code)):
+    story = db.query(Story).filter(Story.id == story_id, Story.code == access_code.code).first()
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     return StoryStatusResponse(story_id=story_id, status=story.status)
 
 
 @router.get("", response_model=list[StorySummary])
-def list_stories(db: Session = Depends(get_db)):
-    stories = db.query(Story).order_by(Story.created_at.desc()).all()
+def list_stories(db: Session = Depends(get_db), access_code: AccessCode = Depends(require_code)):
+    stories = db.query(Story).filter(Story.code == access_code.code).order_by(Story.created_at.desc()).all()
     return [
         StorySummary(
             story_id=s.id,
@@ -184,8 +206,8 @@ def list_stories(db: Session = Depends(get_db)):
 
 
 @router.post("/{story_id}/generate-illustration-prompts", response_model=StoryResponse)
-def generate_illustration_prompts_endpoint(story_id: str, db: Session = Depends(get_db)):
-    story = db.query(Story).filter(Story.id == story_id).first()
+def generate_illustration_prompts_endpoint(story_id: str, db: Session = Depends(get_db), access_code: AccessCode = Depends(require_code)):
+    story = db.query(Story).filter(Story.id == story_id, Story.code == access_code.code).first()
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
 
@@ -258,8 +280,8 @@ def generate_illustration_prompts_endpoint(story_id: str, db: Session = Depends(
 
 
 @router.post("/{story_id}/generate-illustrations", response_model=StoryResponse)
-def generate_illustrations(story_id: str, db: Session = Depends(get_db)):
-    story = db.query(Story).filter(Story.id == story_id).first()
+def generate_illustrations(story_id: str, db: Session = Depends(get_db), access_code: AccessCode = Depends(require_code)):
+    story = db.query(Story).filter(Story.id == story_id, Story.code == access_code.code).first()
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
 
@@ -328,8 +350,8 @@ def generate_illustrations(story_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{story_id}/validate-illustration-prompts")
-def validate_illustration_prompts_endpoint(story_id: str, db: Session = Depends(get_db)):
-    story = db.query(Story).filter(Story.id == story_id).first()
+def validate_illustration_prompts_endpoint(story_id: str, db: Session = Depends(get_db), access_code: AccessCode = Depends(require_code)):
+    story = db.query(Story).filter(Story.id == story_id, Story.code == access_code.code).first()
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
 
@@ -374,8 +396,8 @@ def validate_illustration_prompts_endpoint(story_id: str, db: Session = Depends(
 
 
 @router.post("/{story_id}/evaluate-text")
-def evaluate_story_text(story_id: str, db: Session = Depends(get_db)):
-    story = db.query(Story).filter(Story.id == story_id).first()
+def evaluate_story_text(story_id: str, db: Session = Depends(get_db), access_code: AccessCode = Depends(require_code)):
+    story = db.query(Story).filter(Story.id == story_id, Story.code == access_code.code).first()
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     if not story.pages:
@@ -400,8 +422,8 @@ def evaluate_story_text(story_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{story_id}/pdf")
-def get_story_pdf(story_id: str, db: Session = Depends(get_db)):
-    story = db.query(Story).filter(Story.id == story_id).first()
+def get_story_pdf(story_id: str, db: Session = Depends(get_db), access_code: AccessCode = Depends(require_code)):
+    story = db.query(Story).filter(Story.id == story_id, Story.code == access_code.code).first()
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
 
@@ -429,8 +451,8 @@ def get_story_pdf(story_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{story_id}", response_model=StoryResponse)
-def get_story(story_id: str, db: Session = Depends(get_db)):
-    story = db.query(Story).filter(Story.id == story_id).first()
+def get_story(story_id: str, db: Session = Depends(get_db), access_code: AccessCode = Depends(require_code)):
+    story = db.query(Story).filter(Story.id == story_id, Story.code == access_code.code).first()
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     return StoryResponse(

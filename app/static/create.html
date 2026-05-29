@@ -168,12 +168,50 @@
 
     .story-link:last-child { border-bottom: none; }
     .story-link:hover { color: #333; }
+
+    #usage-bar {
+      margin-bottom: 28px;
+      display: none;
+    }
+
+    #usage-label {
+      font-size: 0.75rem;
+      color: #aaa;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    #usage-dots {
+      display: flex;
+      gap: 8px;
+    }
+
+    .usage-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #e0dbd0;
+      transition: background 0.2s;
+    }
+
+    .usage-dot.used { background: #aaa; }
   </style>
 </head>
 <body>
 
 <div id="app">
   <h1>TaleSnap</h1>
+
+  <div id="usage-bar">
+    <div id="usage-label">
+      <span>Stories today</span>
+      <span id="usage-count"></span>
+    </div>
+    <div id="usage-dots"></div>
+  </div>
 
   <div id="form-view">
     <label class="field-label" for="memory-input">A memory to bring to life</label>
@@ -234,6 +272,16 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ memory, tone: selectedTone }),
       });
+      if (res.status === 429) {
+        const data = await res.json();
+        showError(data.detail || 'Daily story limit reached. Come back tomorrow!');
+        document.getElementById('create-btn').disabled = false;
+        return;
+      }
+      if (res.status === 401) {
+        location.href = '/login';
+        return;
+      }
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       storyId = data.story_id;
@@ -299,6 +347,34 @@
   }
 
   loadPastStories();
+
+  async function loadUsageStatus() {
+    try {
+      const res = await fetch('/auth/status');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.authenticated || data.is_admin) return;
+      const limit = data.daily_limit;
+      const used = data.generations_today;
+      const bar = document.getElementById('usage-bar');
+      const dots = document.getElementById('usage-dots');
+      const countEl = document.getElementById('usage-count');
+      dots.innerHTML = '';
+      for (let i = 0; i < limit; i++) {
+        const dot = document.createElement('div');
+        dot.className = 'usage-dot' + (i < used ? ' used' : '');
+        dots.appendChild(dot);
+      }
+      countEl.textContent = `${used} / ${limit}`;
+      bar.style.display = 'block';
+      if (used >= limit) {
+        document.getElementById('create-btn').disabled = true;
+        showError('Daily story limit reached. Come back tomorrow!');
+      }
+    } catch (_) {}
+  }
+
+  loadUsageStatus();
 </script>
 </body>
 </html>

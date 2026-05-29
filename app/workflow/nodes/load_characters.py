@@ -8,8 +8,9 @@ def load_characters(state: StoryState) -> dict:
 
     db = SessionLocal()
     try:
+        user_code = state["user_code"]
         for name in character_names:
-            row = db.query(Character).filter(Character.name == name).first()
+            row = db.query(Character).filter(Character.code == user_code, Character.name == name).first()
             if row:
                 profiles.append(CharacterProfile(
                     name=row.name,
