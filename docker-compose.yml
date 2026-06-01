@@ -8,8 +8,8 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - ADMIN_CODE=${ADMIN_CODE}
     volumes:
-      - app_data:/app/data
-      - app_output:/app/output
+      - ./data:/app/data
+      - ./output:/app/output
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
