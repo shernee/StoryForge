@@ -20,6 +20,8 @@ RUN mkdir -p app/fonts && \
 
 # Copy application code
 COPY app/ ./app/
+COPY alembic/ ./alembic/
+COPY alembic.ini .
 
 # Create data directory
 RUN mkdir -p data
