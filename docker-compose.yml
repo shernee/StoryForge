@@ -1,24 +1,36 @@
 version: '3.8'
 
 services:
-  storyforge:
+  app:
     build: .
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./data:/app/data
-      - ./output:/app/output
     environment:
       - PYTHONPATH=/app
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - ADMIN_CODE=${ADMIN_CODE}
+    volumes:
+      - app_data:/app/data
+      - app_output:/app/output
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 40s
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+    depends_on:
+      - app
+    restart: unless-stopped
 
 volumes:
-  data:
-    driver: local
+  app_data:
+  app_output:
+  caddy_data:
