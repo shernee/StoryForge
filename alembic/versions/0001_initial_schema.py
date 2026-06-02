@@ -4,6 +4,7 @@ Revision ID: 0001
 Revises:
 Create Date: 2026-05-29
 """
+import os
 from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
@@ -20,6 +21,8 @@ def upgrade() -> None:
     inspector = Inspector.from_engine(bind)
     tables = set(inspector.get_table_names())
 
+    admin_code = os.environ["ADMIN_CODE"]
+
     # --- access_codes ---
     if "access_codes" not in tables:
         op.create_table(
@@ -29,6 +32,10 @@ def upgrade() -> None:
             sa.Column("generations_today", sa.Integer(), nullable=False, server_default="0"),
             sa.Column("last_generation_date", sa.Date(), nullable=True),
             sa.Column("is_admin", sa.Boolean(), nullable=False, server_default="0"),
+        )
+        bind.execute(
+            sa.text("INSERT INTO access_codes (code, label, is_admin) VALUES (:code, :label, :is_admin)"),
+            {"code": admin_code, "label": "Admin", "is_admin": True},
         )
 
     # --- characters ---
@@ -61,9 +68,9 @@ def upgrade() -> None:
             """))
             bind.execute(sa.text("""
                 INSERT INTO characters_new (code, name, role, age, visual_description, personality_notes, created_at)
-                SELECT NULL, name, role, age, visual_description, personality_notes, created_at
+                SELECT :admin_code, name, role, age, visual_description, personality_notes, created_at
                 FROM characters
-            """))
+            """), {"admin_code": admin_code})
             bind.execute(sa.text("DROP TABLE characters"))
             bind.execute(sa.text("ALTER TABLE characters_new RENAME TO characters"))
 
@@ -85,6 +92,7 @@ def upgrade() -> None:
         mem_cols = {c["name"] for c in inspector.get_columns("memories")}
         if "code" not in mem_cols:
             op.add_column("memories", sa.Column("code", sa.String(), sa.ForeignKey("access_codes.code"), nullable=True))
+            bind.execute(sa.text("UPDATE memories SET code = :admin_code"), {"admin_code": admin_code})
 
     # --- stories ---
     if "stories" not in tables:
@@ -103,6 +111,7 @@ def upgrade() -> None:
         story_cols = {c["name"] for c in inspector.get_columns("stories")}
         if "code" not in story_cols:
             op.add_column("stories", sa.Column("code", sa.String(), sa.ForeignKey("access_codes.code"), nullable=True))
+            bind.execute(sa.text("UPDATE stories SET code = :admin_code"), {"admin_code": admin_code})
 
     # --- pages (no user isolation needed — owned via story) ---
     if "pages" not in tables:
