@@ -4,11 +4,9 @@ Revision ID: 0001
 Revises:
 Create Date: 2026-05-29
 """
-import os
 from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.engine.reflection import Inspector
 
 revision: str = "0001"
 down_revision: Union[str, None] = None
@@ -18,10 +16,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     bind = op.get_bind()
-    inspector = Inspector.from_engine(bind)
+    inspector = sa.inspect(bind)
     tables = set(inspector.get_table_names())
-
-    admin_code = os.environ["ADMIN_CODE"]
 
     # --- access_codes ---
     if "access_codes" not in tables:
@@ -33,17 +29,14 @@ def upgrade() -> None:
             sa.Column("last_generation_date", sa.Date(), nullable=True),
             sa.Column("is_admin", sa.Boolean(), nullable=False, server_default="0"),
         )
-        bind.execute(
-            sa.text("INSERT INTO access_codes (code, label, is_admin) VALUES (:code, :label, :is_admin)"),
-            {"code": admin_code, "label": "Admin", "is_admin": True},
-        )
 
     # --- characters ---
     if "characters" not in tables:
         op.create_table(
             "characters",
-            sa.Column("code", sa.String(), sa.ForeignKey("access_codes.code"), primary_key=True),
-            sa.Column("name", sa.String(), primary_key=True),
+            sa.Column("id", sa.String(), primary_key=True),
+            sa.Column("code", sa.String(), sa.ForeignKey("access_codes.code"), nullable=True),
+            sa.Column("name", sa.String(), nullable=False),
             sa.Column("role", sa.String(), nullable=False),
             sa.Column("age", sa.String(), nullable=False),
             sa.Column("visual_description", sa.Text(), nullable=False),
@@ -52,25 +45,32 @@ def upgrade() -> None:
         )
     else:
         char_cols = {c["name"] for c in inspector.get_columns("characters")}
-        if "code" not in char_cols:
-            # Recreate with composite PK — SQLite can't ALTER to add PK columns
+        needs_id = "id" not in char_cols
+        needs_code = "code" not in char_cols
+        if needs_id or needs_code:
+            # Clean up any orphaned temp table from a previous failed run
+            if "characters_new" in tables:
+                bind.execute(sa.text("DROP TABLE characters_new"))
+            # SQLite can't ALTER to add a PK column — recreate the table
             bind.execute(sa.text("""
                 CREATE TABLE characters_new (
-                    code TEXT NOT NULL REFERENCES access_codes(code),
+                    id TEXT PRIMARY KEY,
+                    code TEXT REFERENCES access_codes(code),
                     name TEXT NOT NULL,
                     role TEXT NOT NULL,
                     age TEXT NOT NULL,
                     visual_description TEXT NOT NULL,
                     personality_notes TEXT,
-                    created_at DATETIME,
-                    PRIMARY KEY (code, name)
+                    created_at DATETIME
                 )
             """))
-            bind.execute(sa.text("""
-                INSERT INTO characters_new (code, name, role, age, visual_description, personality_notes, created_at)
-                SELECT :admin_code, name, role, age, visual_description, personality_notes, created_at
+            id_expr = "'char_' || lower(hex(randomblob(4)))" if needs_id else "id"
+            code_expr = "NULL" if needs_code else "code"
+            bind.execute(sa.text(f"""
+                INSERT INTO characters_new (id, code, name, role, age, visual_description, personality_notes, created_at)
+                SELECT {id_expr}, {code_expr}, name, role, age, visual_description, personality_notes, created_at
                 FROM characters
-            """), {"admin_code": admin_code})
+            """))
             bind.execute(sa.text("DROP TABLE characters"))
             bind.execute(sa.text("ALTER TABLE characters_new RENAME TO characters"))
 
@@ -91,8 +91,7 @@ def upgrade() -> None:
     else:
         mem_cols = {c["name"] for c in inspector.get_columns("memories")}
         if "code" not in mem_cols:
-            op.add_column("memories", sa.Column("code", sa.String(), sa.ForeignKey("access_codes.code"), nullable=True))
-            bind.execute(sa.text("UPDATE memories SET code = :admin_code"), {"admin_code": admin_code})
+            bind.execute(sa.text("ALTER TABLE memories ADD COLUMN code TEXT REFERENCES access_codes(code)"))
 
     # --- stories ---
     if "stories" not in tables:
@@ -110,8 +109,7 @@ def upgrade() -> None:
     else:
         story_cols = {c["name"] for c in inspector.get_columns("stories")}
         if "code" not in story_cols:
-            op.add_column("stories", sa.Column("code", sa.String(), sa.ForeignKey("access_codes.code"), nullable=True))
-            bind.execute(sa.text("UPDATE stories SET code = :admin_code"), {"admin_code": admin_code})
+            bind.execute(sa.text("ALTER TABLE stories ADD COLUMN code TEXT REFERENCES access_codes(code)"))
 
     # --- pages (no user isolation needed — owned via story) ---
     if "pages" not in tables:
