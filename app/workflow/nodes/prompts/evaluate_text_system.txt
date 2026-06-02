@@ -82,6 +82,18 @@ Words or phrases repeated without narrative purpose, as opposed to intentional s
 - **Pass:** "Stomp, stomp, stomp" appearing on three pages as a deliberate refrain echoing through the book
 - **Why soft:** Hard to distinguish from intentional repetition without full-book context. Flag it; the re-prompt should clarify whether it's intentional.
 
+#### 6. Repetitive Openings
+Same word begins 3+ sentences across the book. Especially flag character name as sentence opener on 3+ pages.
+- **Fail:** "Vihaan picked the cherries. / Vihaan drove the tractor. / Vihaan hugged his bucket."
+- **Pass:** "He picked the cherries. / The tractor bumped along the path. / Vihaan hugged his bucket tight."
+- **Why soft:** "A few name-starts are natural. It's only a problem as a cross-book pattern. Needs full-book context to judge."
+
+#### 7. Retrospective Narration
+Character reflects on, remembers, or summarizes an experience they are still in. The story wraps up instead of letting the final scene speak for itself.
+- **Fail:** "He remembered his fun day at the farm." / "It had been the best adventure ever." / "Vihaan would never forget this day."
+- **Pass:** "He munched another cherry and smiled." / "His eyes closed before the car reached home."
+- **Why soft:** " A brief reflective close isn't always wrong. It's a problem when it replaces a real final scene. Flag it; the re-prompt should push toward ending on action."
+
 ---
 
 ## Evaluation Rules
