@@ -1,3 +1,4 @@
+from collections import Counter
 from pathlib import Path
 
 from app.workflow.state import StoryState, EvaluationResult, PageText
@@ -24,6 +25,11 @@ def evaluate_text(state: StoryState) -> dict:
         response_model=EvaluationResult,
         temperature=EVAL_TEMPERATURE,
     )
+
+    counts: Counter = Counter()
+    for page in result.pages:
+        counts.update(page.soft_failures)
+    result.soft_failure_counts = dict(counts)
 
     text_feedback: dict[int, str] = {}
 

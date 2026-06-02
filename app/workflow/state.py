@@ -92,6 +92,7 @@ class EvaluationResult(BaseModel):
     book_pass: bool
     pages: list[PageEvaluation]
     pattern_failures: list[PatternFailure] = Field(default_factory=list)
+    soft_failure_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class StoryState(TypedDict):
