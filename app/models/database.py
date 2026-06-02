@@ -13,8 +13,9 @@ Base = declarative_base()
 class Character(Base):
     __tablename__ = "characters"
 
-    code = Column(String, ForeignKey("access_codes.code"), primary_key=True)
-    name = Column(String, primary_key=True)
+    id = Column(String, primary_key=True, default=lambda: f"char_{uuid.uuid4().hex[:8]}")
+    code = Column(String, ForeignKey("access_codes.code"), nullable=True)
+    name = Column(String, nullable=False)
     role = Column(String, nullable=False)
     age = Column(String, nullable=False)
     visual_description = Column(Text, nullable=False)

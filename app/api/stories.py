@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import date
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -62,6 +63,39 @@ class StorySummary(BaseModel):
     tone: str
     status: str
     page_count: int
+
+
+class SplitPageRequest(BaseModel):
+    split_after_sentence: int
+
+
+class MergePagesRequest(BaseModel):
+    page_numbers: list[int]
+
+
+def _split_sentences(text: str) -> list[str]:
+    return [s for s in re.split(r'(?<=[.!?])\s+', text.strip()) if s]
+
+
+def story_response(story) -> StoryResponse:
+    return StoryResponse(
+        story_id=story.id,
+        title=story.title,
+        tone=story.tone,
+        style_guide=story.style_guide,
+        status=story.status,
+        pages=[
+            PageResponse(
+                page_number=p.page_number,
+                text=p.text,
+                illustration_prompt=p.illustration_prompt,
+                illustration_path=p.illustration_path,
+                mood=p.mood,
+                arc_position=p.arc_position,
+            )
+            for p in sorted(story.pages, key=lambda p: p.page_number)
+        ],
+    )
 
 
 def _run_story_generation(story_id: str, memory_id: str, raw_memory_text: str, tone: str, user_code: str):
@@ -259,24 +293,7 @@ def generate_illustration_prompts_endpoint(story_id: str, db: Session = Depends(
     db.commit()
 
     db.refresh(story)
-    return StoryResponse(
-        story_id=story.id,
-        title=story.title,
-        tone=story.tone,
-        style_guide=story.style_guide,
-        status=story.status,
-        pages=[
-            PageResponse(
-                page_number=p.page_number,
-                text=p.text,
-                illustration_prompt=p.illustration_prompt,
-                illustration_path=p.illustration_path,
-                mood=p.mood,
-                arc_position=p.arc_position,
-            )
-            for p in sorted(story.pages, key=lambda p: p.page_number)
-        ],
-    )
+    return story_response(story)
 
 
 @router.post("/{story_id}/generate-illustrations", response_model=StoryResponse)
@@ -329,24 +346,7 @@ def generate_illustrations(story_id: str, db: Session = Depends(get_db), access_
     db.commit()
 
     db.refresh(story)
-    return StoryResponse(
-        story_id=story.id,
-        title=story.title,
-        tone=story.tone,
-        style_guide=story.style_guide,
-        status=story.status,
-        pages=[
-            PageResponse(
-                page_number=p.page_number,
-                text=p.text,
-                illustration_prompt=p.illustration_prompt,
-                illustration_path=p.illustration_path,
-                mood=p.mood,
-                arc_position=p.arc_position,
-            )
-            for p in sorted_pages
-        ],
-    )
+    return story_response(story)
 
 
 @router.post("/{story_id}/validate-illustration-prompts")
@@ -450,26 +450,100 @@ def get_story_pdf(story_id: str, db: Session = Depends(get_db), access_code: Acc
     )
 
 
+@router.post("/{story_id}/pages/merge", response_model=StoryResponse)
+def merge_pages(
+    story_id: str,
+    request: MergePagesRequest,
+    db: Session = Depends(get_db),
+    access_code: AccessCode = Depends(require_code),
+):
+    story = db.query(Story).filter(Story.id == story_id, Story.code == access_code.code).first()
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+
+    if len(request.page_numbers) < 2:
+        raise HTTPException(status_code=422, detail="At least two page numbers are required")
+
+    sorted_nums = sorted(request.page_numbers)
+    for i in range(len(sorted_nums) - 1):
+        if sorted_nums[i + 1] != sorted_nums[i] + 1:
+            raise HTTPException(status_code=422, detail="page_numbers must be consecutive")
+
+    pages = (
+        db.query(Page)
+        .filter(Page.story_id == story_id, Page.page_number.in_(sorted_nums))
+        .order_by(Page.page_number)
+        .all()
+    )
+    if len(pages) != len(sorted_nums):
+        raise HTTPException(status_code=404, detail="One or more pages not found")
+
+    first_page = pages[0]
+    first_page.text = " ".join(p.text for p in pages)
+
+    for p in pages[1:]:
+        db.delete(p)
+
+    removed = len(pages) - 1
+    for p in db.query(Page).filter(Page.story_id == story_id, Page.page_number > sorted_nums[-1]).all():
+        p.page_number -= removed
+
+    db.commit()
+    db.refresh(story)
+    return story_response(story)
+
+
+@router.post("/{story_id}/pages/{page_number}/split", response_model=StoryResponse)
+def split_page(
+    story_id: str,
+    page_number: int,
+    request: SplitPageRequest,
+    db: Session = Depends(get_db),
+    access_code: AccessCode = Depends(require_code),
+):
+    story = db.query(Story).filter(Story.id == story_id, Story.code == access_code.code).first()
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+
+    page = db.query(Page).filter(Page.story_id == story_id, Page.page_number == page_number).first()
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+
+    sentences = _split_sentences(page.text)
+    n = request.split_after_sentence
+    if n < 1 or n >= len(sentences):
+        raise HTTPException(
+            status_code=422,
+            detail=f"split_after_sentence must be between 1 and {len(sentences) - 1} (page has {len(sentences)} sentences)",
+        )
+
+    first_text = " ".join(sentences[:n])
+    second_text = " ".join(sentences[n:])
+
+    for p in db.query(Page).filter(Page.story_id == story_id, Page.page_number > page_number).all():
+        p.page_number += 1
+
+    page.text = first_text
+    db.add(Page(
+        story_id=story_id,
+        page_number=page_number + 1,
+        outline=page.outline,
+        text=second_text,
+        illustration_prompt=page.illustration_prompt,
+        illustration_arc_group=page.illustration_arc_group,
+        illustration_path=page.illustration_path,
+        mood=page.mood,
+        arc_position=page.arc_position,
+    ))
+
+    db.commit()
+    db.refresh(story)
+    return story_response(story)
+
+
 @router.get("/{story_id}", response_model=StoryResponse)
 def get_story(story_id: str, db: Session = Depends(get_db), access_code: AccessCode = Depends(require_code)):
     story = db.query(Story).filter(Story.id == story_id, Story.code == access_code.code).first()
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
-    return StoryResponse(
-        story_id=story.id,
-        title=story.title,
-        tone=story.tone,
-        style_guide=story.style_guide,
-        status=story.status,
-        pages=[
-            PageResponse(
-                page_number=p.page_number,
-                text=p.text,
-                illustration_prompt=p.illustration_prompt,
-                illustration_path=p.illustration_path,
-                mood=p.mood,
-                arc_position=p.arc_position,
-            )
-            for p in sorted(story.pages, key=lambda p: p.page_number)
-        ],
-    )
+    return story_response(story)
