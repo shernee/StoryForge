@@ -9,23 +9,31 @@ def load_characters(state: StoryState) -> dict:
     db = SessionLocal()
     try:
         user_code = state["user_code"]
+        all_chars = db.query(Character).filter(Character.code == user_code).all()
+
+        # Build lookup: lowercase name + any alias → Character row
+        lookup: dict[str, Character] = {}
+        for row in all_chars:
+            lookup[row.name.lower()] = row
+            for alias in (row.aliases or []):
+                if alias.strip():
+                    lookup[alias.strip().lower()] = row
+
         for name in character_names:
-            row = db.query(Character).filter(Character.code == user_code, Character.name == name).first()
+            row = lookup.get(name.lower())
             if row:
                 profiles.append(CharacterProfile(
                     name=row.name,
                     role=row.role,
                     age=row.age,
-                    visual_description=row.visual_description,
-                    personality_notes=row.personality_notes,
+                    visual_description=row.visual_description or "",
                 ))
             else:
-                # No profile on file — proceed with name only so generation still works
                 profiles.append(CharacterProfile(
                     name=name,
                     role="family member",
                     age="unknown",
-                    visual_description="no description available",
+                    visual_description="",
                 ))
     finally:
         db.close()

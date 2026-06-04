@@ -10,11 +10,12 @@ from app.models.database import get_db, SessionLocal, AccessCode
 from app.api.stories import router as stories_router
 from app.api.memories import router as memories_router
 from app.api.auth import router as auth_router, COOKIE_NAME
+from app.api.characters import router as characters_router
 import os
 
 app = FastAPI(title="StoryForge", version="0.1.0")
 
-PROTECTED_PAGES = {"/new", "/read"}
+PROTECTED_PAGES = {"/new", "/read", "/characters"}
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -40,6 +41,7 @@ app.add_middleware(AuthMiddleware)
 app.include_router(auth_router)
 app.include_router(stories_router)
 app.include_router(memories_router)
+app.include_router(characters_router)
 
 
 @app.on_event("startup")
@@ -87,6 +89,11 @@ async def reader_page():
 @app.get("/new")
 async def create_page():
     return FileResponse("app/static/create.html")
+
+
+@app.get("/characters")
+async def characters_page():
+    return FileResponse("app/static/characters.html")
 
 
 @app.get("/health")

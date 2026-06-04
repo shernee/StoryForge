@@ -141,6 +141,21 @@
       display: none;
     }
 
+    .memory-hint {
+      font-size: 0.78rem;
+      color: #bbb;
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+
+    .memory-hint a {
+      color: #bbb;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    .memory-hint a:hover { color: #888; }
+
     #past-stories {
       margin-top: 40px;
       border-top: 1px solid #e8e3da;
@@ -219,6 +234,11 @@
       id="memory-input"
       placeholder="Tell us about a moment, a place, a feeling..."
     ></textarea>
+
+    <p class="memory-hint">
+      Use the same name you'd say out loud — <em>Nana</em>, <em>Daddy</em>, <em>big brother Tom</em>.
+      If someone appears in lots of stories, <a href="/characters">save a quick profile</a> so TaleSnap always gets them right.
+    </p>
 
     <div class="tone-section">
       <span class="field-label">Tone</span>

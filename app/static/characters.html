@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TaleSnap — People in your stories</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Georgia, serif;
+      background: #faf7f2;
+      color: #333;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px 48px;
+    }
+
+    #app {
+      width: 100%;
+      max-width: 520px;
+    }
+
+    h1 {
+      font-size: 1rem;
+      color: #555;
+      text-align: center;
+      margin-bottom: 32px;
+      font-weight: normal;
+      letter-spacing: 0.04em;
+    }
+
+    .help-block {
+      background: #f0ece3;
+      border-radius: 10px;
+      padding: 16px 18px;
+      margin-bottom: 28px;
+      font-size: 0.88rem;
+      color: #666;
+      line-height: 1.65;
+    }
+
+    .help-block strong {
+      color: #444;
+      font-weight: normal;
+      font-style: italic;
+    }
+
+    .field-label {
+      font-size: 0.8rem;
+      color: #888;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .character-list {
+      margin-bottom: 20px;
+    }
+
+    .character-card {
+      background: #fff;
+      border: 2px solid #ddd;
+      border-radius: 10px;
+      padding: 16px 18px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .character-info { flex: 1; }
+
+    .character-name {
+      font-size: 1rem;
+      color: #333;
+      margin-bottom: 4px;
+    }
+
+    .character-meta {
+      font-size: 0.82rem;
+      color: #888;
+      margin-bottom: 4px;
+    }
+
+    .character-aliases {
+      font-size: 0.8rem;
+      color: #aaa;
+      font-style: italic;
+    }
+
+    .remove-btn {
+      background: none;
+      border: none;
+      color: #ccc;
+      font-size: 1.1rem;
+      cursor: pointer;
+      padding: 2px 4px;
+      line-height: 1;
+      transition: color 0.15s;
+      flex-shrink: 0;
+    }
+
+    .remove-btn:hover { color: #999; }
+
+    .empty-state {
+      text-align: center;
+      color: #bbb;
+      font-size: 0.9rem;
+      padding: 24px 0 16px;
+      font-style: italic;
+    }
+
+    #add-btn {
+      width: 100%;
+      background: none;
+      border: 2px dashed #ddd;
+      border-radius: 10px;
+      padding: 14px;
+      font-family: Georgia, serif;
+      font-size: 0.95rem;
+      color: #aaa;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+      margin-bottom: 28px;
+    }
+
+    #add-btn:hover { border-color: #bbb; color: #777; }
+
+    #add-form {
+      display: none;
+      background: #fff;
+      border: 2px solid #ddd;
+      border-radius: 10px;
+      padding: 20px 18px;
+      margin-bottom: 24px;
+    }
+
+    #add-form .form-row {
+      margin-bottom: 16px;
+    }
+
+    #add-form input,
+    #add-form select {
+      width: 100%;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-family: Georgia, serif;
+      font-size: 0.95rem;
+      color: #333;
+      background: #faf7f2;
+      outline: none;
+      transition: border-color 0.15s;
+      appearance: none;
+    }
+
+    #add-form input:focus,
+    #add-form select:focus { border-color: #aaa; }
+
+    #add-form input::placeholder { color: #ccc; }
+
+    .alias-hint {
+      font-size: 0.75rem;
+      color: #bbb;
+      margin-top: 5px;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .form-actions button {
+      flex: 1;
+      padding: 11px;
+      border-radius: 8px;
+      font-family: Georgia, serif;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    #save-btn {
+      background: none;
+      border: 2px solid #bbb;
+      color: #555;
+    }
+
+    #save-btn:hover { border-color: #888; color: #333; }
+
+    #cancel-btn {
+      background: none;
+      border: 2px solid #eee;
+      color: #bbb;
+    }
+
+    #cancel-btn:hover { border-color: #ddd; color: #888; }
+
+    #form-error {
+      font-size: 0.85rem;
+      color: #c00;
+      margin-top: 10px;
+      display: none;
+    }
+
+    .back-link {
+      display: block;
+      text-align: center;
+      font-size: 0.85rem;
+      color: #bbb;
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    .back-link:hover { color: #888; }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <h1>TaleSnap</h1>
+
+  <div class="help-block">
+    Use the same name in your stories that you use here — <strong>Nana</strong>, <strong>big brother Tom</strong>, <strong>Daddy</strong>. If you call the same person different things across stories, TaleSnap may treat them as separate people.<br><br>
+    Add the other names they go by below so TaleSnap always recognises them. This is entirely optional — your stories work fine without it.
+  </div>
+
+  <span class="field-label">People in your stories</span>
+
+  <div class="character-list" id="character-list">
+    <div class="empty-state" id="empty-state">No one added yet.</div>
+  </div>
+
+  <button id="add-btn">+ Add someone</button>
+
+  <div id="add-form">
+    <div class="form-row">
+      <label class="field-label" for="input-name">Name</label>
+      <input id="input-name" type="text" placeholder="e.g. Nana, big brother Tom, Mamma">
+    </div>
+    <div class="form-row">
+      <label class="field-label" for="input-role">Who are they</label>
+      <select id="input-role">
+        <option value="parent">Parent</option>
+        <option value="grandparent">Grandparent</option>
+        <option value="sibling">Sibling</option>
+        <option value="friend">Friend</option>
+        <option value="pet">Pet</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label class="field-label" for="input-age">Age</label>
+      <input id="input-age" type="text" placeholder="e.g. 7, mid-30s, elderly">
+    </div>
+    <div class="form-row">
+      <label class="field-label" for="input-aliases">Also known as</label>
+      <input id="input-aliases" type="text" placeholder="e.g. Mom, Mummy, Mum">
+      <p class="alias-hint">Separate multiple names with commas. Leave blank if there's only one way you refer to them.</p>
+    </div>
+    <div class="form-actions">
+      <button id="save-btn">Save</button>
+      <button id="cancel-btn">Cancel</button>
+    </div>
+    <div id="form-error"></div>
+  </div>
+
+  <a class="back-link" href="/new">← Back to stories</a>
+</div>
+
+<script>
+  let characters = [];
+
+  async function loadCharacters() {
+    try {
+      const res = await fetch('/characters');
+      if (res.status === 401) { location.href = '/login'; return; }
+      if (!res.ok) return;
+      characters = await res.json();
+      renderList();
+    } catch (_) {}
+  }
+
+  function renderList() {
+    const list = document.getElementById('character-list');
+    const empty = document.getElementById('empty-state');
+    const cards = list.querySelectorAll('.character-card');
+    cards.forEach(c => c.remove());
+
+    if (characters.length === 0) {
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+
+    characters.forEach(char => {
+      const card = document.createElement('div');
+      card.className = 'character-card';
+
+      const roleLabel = char.role.charAt(0).toUpperCase() + char.role.slice(1);
+      const aliasLine = char.aliases.length
+        ? `<div class="character-aliases">Also: ${char.aliases.join(', ')}</div>`
+        : '';
+
+      card.innerHTML = `
+        <div class="character-info">
+          <div class="character-name">${esc(char.name)}</div>
+          <div class="character-meta">${esc(roleLabel)}${char.age ? ' · ' + esc(char.age) : ''}</div>
+          ${aliasLine}
+        </div>
+        <button class="remove-btn" data-id="${esc(char.id)}" title="Remove">×</button>
+      `;
+      list.appendChild(card);
+    });
+
+    list.querySelectorAll('.remove-btn').forEach(btn => {
+      btn.addEventListener('click', () => removeCharacter(btn.dataset.id));
+    });
+  }
+
+  async function removeCharacter(id) {
+    try {
+      const res = await fetch(`/characters/${id}`, { method: 'DELETE' });
+      if (!res.ok) return;
+      characters = characters.filter(c => c.id !== id);
+      renderList();
+    } catch (_) {}
+  }
+
+  document.getElementById('add-btn').addEventListener('click', () => {
+    document.getElementById('add-btn').style.display = 'none';
+    document.getElementById('add-form').style.display = 'block';
+    document.getElementById('input-name').focus();
+  });
+
+  document.getElementById('cancel-btn').addEventListener('click', resetForm);
+
+  document.getElementById('save-btn').addEventListener('click', async () => {
+    const name = document.getElementById('input-name').value.trim();
+    const role = document.getElementById('input-role').value;
+    const age = document.getElementById('input-age').value.trim();
+    const aliasRaw = document.getElementById('input-aliases').value;
+    const aliases = aliasRaw.split(',').map(a => a.trim()).filter(Boolean);
+
+    const errEl = document.getElementById('form-error');
+    if (!name) {
+      errEl.textContent = 'Please enter a name.';
+      errEl.style.display = 'block';
+      return;
+    }
+    errEl.style.display = 'none';
+
+    try {
+      const res = await fetch('/characters', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, role, age, aliases }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        errEl.textContent = data.detail || 'Something went wrong.';
+        errEl.style.display = 'block';
+        return;
+      }
+      const created = await res.json();
+      characters.push(created);
+      renderList();
+      resetForm();
+    } catch (_) {
+      errEl.textContent = 'Something went wrong.';
+      errEl.style.display = 'block';
+    }
+  });
+
+  function resetForm() {
+    document.getElementById('input-name').value = '';
+    document.getElementById('input-role').value = 'parent';
+    document.getElementById('input-age').value = '';
+    document.getElementById('input-aliases').value = '';
+    document.getElementById('form-error').style.display = 'none';
+    document.getElementById('add-form').style.display = 'none';
+    document.getElementById('add-btn').style.display = 'block';
+  }
+
+  function esc(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  loadCharacters();
+</script>
+</body>
+</html>

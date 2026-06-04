@@ -20,6 +20,7 @@ class Character(Base):
     age = Column(String, nullable=False)
     visual_description = Column(Text, nullable=False)
     personality_notes = Column(Text)
+    aliases = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Memory(Base):
