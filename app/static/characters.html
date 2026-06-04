@@ -93,7 +93,13 @@
       font-style: italic;
     }
 
-    .remove-btn {
+    .card-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .remove-btn, .edit-btn {
       background: none;
       border: none;
       color: #ccc;
@@ -102,10 +108,78 @@
       padding: 2px 4px;
       line-height: 1;
       transition: color 0.15s;
-      flex-shrink: 0;
     }
 
     .remove-btn:hover { color: #999; }
+    .edit-btn:hover { color: #888; }
+
+    .card-edit-form {
+      width: 100%;
+    }
+
+    .card-edit-form input,
+    .card-edit-form select {
+      width: 100%;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-family: Georgia, serif;
+      font-size: 0.88rem;
+      color: #333;
+      background: #faf7f2;
+      outline: none;
+      transition: border-color 0.15s;
+      appearance: none;
+      margin-bottom: 8px;
+    }
+
+    .card-edit-form input:focus,
+    .card-edit-form select:focus { border-color: #aaa; }
+
+    .card-edit-form .alias-hint {
+      font-size: 0.75rem;
+      color: #bbb;
+      margin-top: -4px;
+      margin-bottom: 10px;
+    }
+
+    .card-edit-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .card-edit-actions button {
+      flex: 1;
+      padding: 8px;
+      border-radius: 8px;
+      font-family: Georgia, serif;
+      font-size: 0.88rem;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .card-save-btn {
+      background: none;
+      border: 2px solid #bbb;
+      color: #555;
+    }
+
+    .card-save-btn:hover { border-color: #888; color: #333; }
+
+    .card-cancel-btn {
+      background: none;
+      border: 2px solid #eee;
+      color: #bbb;
+    }
+
+    .card-cancel-btn:hover { border-color: #ddd; color: #888; }
+
+    .card-edit-error {
+      font-size: 0.8rem;
+      color: #c00;
+      margin-top: 8px;
+      display: none;
+    }
 
     .empty-state {
       text-align: center;
@@ -287,41 +361,108 @@
     } catch (_) {}
   }
 
+  const ROLE_OPTIONS = ['parent','grandparent','sibling','friend','pet','other'];
+
   function renderList() {
     const list = document.getElementById('character-list');
     const empty = document.getElementById('empty-state');
-    const cards = list.querySelectorAll('.character-card');
-    cards.forEach(c => c.remove());
+    list.querySelectorAll('.character-card').forEach(c => c.remove());
 
     if (characters.length === 0) {
       empty.style.display = 'block';
       return;
     }
     empty.style.display = 'none';
+    characters.forEach(char => list.appendChild(buildCard(char, false)));
+  }
 
-    characters.forEach(char => {
-      const card = document.createElement('div');
-      card.className = 'character-card';
+  function buildCard(char, editing) {
+    const card = document.createElement('div');
+    card.className = 'character-card';
+    card.dataset.id = char.id;
 
+    if (editing) {
+      const roleOpts = ROLE_OPTIONS.map(r =>
+        `<option value="${r}"${r === char.role ? ' selected' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`
+      ).join('');
+      card.style.flexDirection = 'column';
+      card.innerHTML = `
+        <div class="card-edit-form">
+          <input class="edit-name" type="text" value="${esc(char.name)}" placeholder="Name">
+          <select class="edit-role">${roleOpts}</select>
+          <input class="edit-age" type="text" value="${esc(char.age)}" placeholder="Age (e.g. 7, mid-30s, elderly)">
+          <input class="edit-aliases" type="text" value="${esc(char.aliases.join(', '))}" placeholder="Also known as (comma-separated)">
+          <p class="alias-hint">Separate multiple names with commas.</p>
+          <div class="card-edit-actions">
+            <button class="card-save-btn">Save</button>
+            <button class="card-cancel-btn">Cancel</button>
+          </div>
+          <div class="card-edit-error"></div>
+        </div>
+      `;
+      card.querySelector('.card-save-btn').addEventListener('click', () => saveEdit(card, char));
+      card.querySelector('.card-cancel-btn').addEventListener('click', () => {
+        card.replaceWith(buildCard(char, false));
+      });
+    } else {
       const roleLabel = char.role.charAt(0).toUpperCase() + char.role.slice(1);
       const aliasLine = char.aliases.length
-        ? `<div class="character-aliases">Also: ${char.aliases.join(', ')}</div>`
+        ? `<div class="character-aliases">Also: ${esc(char.aliases.join(', '))}</div>`
         : '';
-
       card.innerHTML = `
         <div class="character-info">
           <div class="character-name">${esc(char.name)}</div>
           <div class="character-meta">${esc(roleLabel)}${char.age ? ' · ' + esc(char.age) : ''}</div>
           ${aliasLine}
         </div>
-        <button class="remove-btn" data-id="${esc(char.id)}" title="Remove">×</button>
+        <div class="card-actions">
+          <button class="edit-btn" title="Edit">✎</button>
+          <button class="remove-btn" title="Remove">×</button>
+        </div>
       `;
-      list.appendChild(card);
-    });
+      card.querySelector('.edit-btn').addEventListener('click', () => {
+        card.replaceWith(buildCard(char, true));
+      });
+      card.querySelector('.remove-btn').addEventListener('click', () => removeCharacter(char.id));
+    }
 
-    list.querySelectorAll('.remove-btn').forEach(btn => {
-      btn.addEventListener('click', () => removeCharacter(btn.dataset.id));
-    });
+    return card;
+  }
+
+  async function saveEdit(card, char) {
+    const name = card.querySelector('.edit-name').value.trim();
+    const role = card.querySelector('.edit-role').value;
+    const age = card.querySelector('.edit-age').value.trim();
+    const aliases = card.querySelector('.edit-aliases').value.split(',').map(a => a.trim()).filter(Boolean);
+    const errEl = card.querySelector('.card-edit-error');
+
+    if (!name) {
+      errEl.textContent = 'Please enter a name.';
+      errEl.style.display = 'block';
+      return;
+    }
+    errEl.style.display = 'none';
+
+    try {
+      const res = await fetch(`/api/characters/${char.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, role, age, aliases }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        errEl.textContent = data.detail || 'Something went wrong.';
+        errEl.style.display = 'block';
+        return;
+      }
+      const updated = await res.json();
+      const idx = characters.findIndex(c => c.id === char.id);
+      if (idx !== -1) characters[idx] = updated;
+      card.replaceWith(buildCard(updated, false));
+    } catch (_) {
+      errEl.textContent = 'Something went wrong.';
+      errEl.style.display = 'block';
+    }
   }
 
   async function removeCharacter(id) {

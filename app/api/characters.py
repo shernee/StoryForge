@@ -52,6 +52,25 @@ def create_character(body: CharacterCreate, db: Session = Depends(get_db), acces
     return CharacterResponse(id=char.id, name=char.name, role=char.role, age=char.age, aliases=char.aliases or [])
 
 
+@router.put("/{character_id}", response_model=CharacterResponse)
+def update_character(character_id: str, body: CharacterCreate, db: Session = Depends(get_db), access_code: AccessCode = Depends(require_code)):
+    char = db.query(Character).filter(Character.id == character_id, Character.code == access_code.code).first()
+    if not char:
+        raise HTTPException(status_code=404, detail="Character not found")
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Name is required")
+    if body.role not in VALID_ROLES:
+        raise HTTPException(status_code=422, detail=f"role must be one of {VALID_ROLES}")
+    char.name = name
+    char.role = body.role
+    char.age = body.age.strip()
+    char.aliases = [a.strip() for a in body.aliases if a.strip()]
+    db.commit()
+    db.refresh(char)
+    return CharacterResponse(id=char.id, name=char.name, role=char.role, age=char.age, aliases=char.aliases or [])
+
+
 @router.delete("/{character_id}", status_code=204)
 def delete_character(character_id: str, db: Session = Depends(get_db), access_code: AccessCode = Depends(require_code)):
     char = db.query(Character).filter(Character.id == character_id, Character.code == access_code.code).first()

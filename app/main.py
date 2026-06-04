@@ -102,7 +102,12 @@ async def health_check():
 
 
 @app.get("/")
-async def root():
+async def root(request: Request, db: Session = Depends(get_db)):
+    code = request.cookies.get(COOKIE_NAME)
+    if code:
+        access_code = db.query(AccessCode).filter(AccessCode.code == code).first()
+        if access_code:
+            return RedirectResponse(url="/new", status_code=302)
     return RedirectResponse(url="/login", status_code=302)
 
 
