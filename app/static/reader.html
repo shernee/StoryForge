@@ -110,16 +110,27 @@
       text-align: center;
     }
 
-    #back {
+    #topbar {
+      width: 100%;
+      max-width: 1200px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 16px;
+      flex-shrink: 0;
+    }
+
+    #back, #download {
       font-size: 0.8rem;
       color: #bbb;
       text-decoration: none;
-      padding: 8px 16px;
-      align-self: flex-start;
+      padding: 8px 0;
       transition: color 0.15s;
     }
 
-    #back:hover { color: #888; }
+    #back:hover, #download:hover { color: #888; }
+
+    #download { visibility: hidden; }
 
     #error {
       padding: 48px 24px;
@@ -131,7 +142,10 @@
 </head>
 <body>
 
-<a id="back" href="/new">← Stories</a>
+<div id="topbar">
+  <a id="back" href="/new">← Stories</a>
+  <a id="download" href="#">Save as PDF</a>
+</div>
 <div id="title"></div>
 
 <div id="reader">
@@ -163,6 +177,7 @@
   const nextBtn = document.getElementById('next');
   const indicatorEl = document.getElementById('page-indicator');
   const errorEl = document.getElementById('error');
+  const downloadEl = document.getElementById('download');
 
   let pages = [];
   let current = 0;
@@ -224,6 +239,8 @@
     const story = await res.json();
     titleEl.textContent = story.title;
     document.title = story.title + ' — TaleSnap';
+    downloadEl.href = `/stories/${storyId}/pdf`;
+    downloadEl.style.visibility = 'visible';
     pages = story.pages.sort((a, b) => a.page_number - b.page_number);
     render();
   }
