@@ -279,7 +279,7 @@
 
   async function loadCharacters() {
     try {
-      const res = await fetch('/characters');
+      const res = await fetch('/api/characters');
       if (res.status === 401) { location.href = '/login'; return; }
       if (!res.ok) return;
       characters = await res.json();
@@ -326,7 +326,7 @@
 
   async function removeCharacter(id) {
     try {
-      const res = await fetch(`/characters/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/characters/${id}`, { method: 'DELETE' });
       if (!res.ok) return;
       characters = characters.filter(c => c.id !== id);
       renderList();
@@ -357,7 +357,7 @@
     errEl.style.display = 'none';
 
     try {
-      const res = await fetch('/characters', {
+      const res = await fetch('/api/characters', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, role, age, aliases }),

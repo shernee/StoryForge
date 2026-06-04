@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from app.models.database import get_db, Character
 from app.api.auth import require_code, AccessCode
 
-router = APIRouter(prefix="/characters", tags=["characters"])
+router = APIRouter(prefix="/api/characters", tags=["characters"])
 
 VALID_ROLES = ["parent", "grandparent", "sibling", "friend", "pet", "other"]
 
